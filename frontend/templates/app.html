@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Planner — PlanForge{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+
+  <!-- Input bar -->
+  <div class="mb-6">
+    <div class="bg-gray-900 border border-gray-700 focus-within:border-brand-500 rounded-2xl p-4 transition-colors">
+      <label class="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Planning Task</label>
+      <div class="flex gap-3">
+        <textarea
+          id="taskInput"
+          rows="2"
+          placeholder="e.g. stack block A on block B, then put C on top of A"
+          class="flex-1 bg-transparent text-gray-100 placeholder-gray-600 resize-none outline-none text-lg"
+        ></textarea>
+        <button
+          id="solveBtn"
+          onclick="runPlan()"
+          class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-xl font-semibold transition-colors self-end"
+        >
+          Solve →
+        </button>
+      </div>
+
+      <!-- Options row -->
+      <div class="flex flex-wrap gap-4 mt-3 pt-3 border-t border-gray-800 text-sm">
+        <label class="flex items-center gap-2 text-gray-400 cursor-pointer">
+          <input type="checkbox" id="showPddl" class="rounded" />
+          Show PDDL
+        </label>
+        <label class="flex items-center gap-2 text-gray-400">
+          Timeout:
+          <select id="timeout" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200">
+            <option value="30">30s</option>
+            <option value="60">60s</option>
+            <option value="120">120s</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-2 text-gray-400">
+          Domain:
+          <select id="domainOverride" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200">
+            <option value="">Auto-detect</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div id="statusBar" class="hidden mb-4">
+    <div class="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+      <div id="statusDot" class="w-2 h-2 rounded-full bg-brand-500 pulse-dot"></div>
+      <span id="statusText" class="text-sm text-gray-300"></span>
+    </div>
+  </div>
+
+  <!-- Main output grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Left: Plan output -->
+    <div class="space-y-4">
+
+      <!-- Plan steps -->
+      <div id="planCard" class="hidden bg-gray-900 border border-gray-800 rounded-2xl p-5 slide-in">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-lg">Plan</h2>
+          <div id="planMeta" class="text-xs text-gray-500 mono"></div>
+        </div>
+        <ol id="planSteps" class="space-y-2"></ol>
+      </div>
+
+      <!-- Explanation -->
+      <div id="explanationCard" class="hidden bg-gray-900 border border-gray-800 rounded-2xl p-5 slide-in">
+        <h2 class="font-semibold text-lg mb-3">Explanation</h2>
+        <p id="explanationText" class="text-gray-300 text-sm leading-relaxed"></p>
+      </div>
+
+      <!-- Error -->
+      <div id="errorCard" class="hidden bg-red-950 border border-red-800 rounded-2xl p-5 slide-in">
+        <h2 class="font-semibold text-red-400 mb-2">Could not find a plan</h2>
+        <p id="errorText" class="text-red-300 text-sm"></p>
+        <p class="text-gray-500 text-xs mt-2">Try rephrasing the task or choose a domain manually.</p>
+      </div>
+
+    </div>
+
+    <!-- Right: PDDL viewer -->
+    <div id="pddlPanel" class="hidden space-y-4 slide-in">
+
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+        <div class="flex border-b border-gray-800">
+          <button onclick="showTab('domain')" id="tabDomain"
+            class="tab-btn px-4 py-3 text-sm font-medium text-brand-400 border-b-2 border-brand-500">
+            Domain
+          </button>
+          <button onclick="showTab('problem')" id="tabProblem"
+            class="tab-btn px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-300 border-b-2 border-transparent">
+            Problem
+          </button>
+        </div>
+        <div class="p-4">
+          <pre id="domainPddl" class="mono text-xs text-green-400 pddl-block max-h-96 overflow-auto"></pre>
+          <pre id="problemPddl" class="mono text-xs text-blue-400 pddl-block max-h-96 overflow-auto hidden"></pre>
+        </div>
+      </div>
+
+      <div id="domainBadge" class="hidden flex items-center gap-2 text-xs text-gray-500">
+        <span class="bg-gray-800 px-2 py-1 rounded mono" id="domainBadgeText"></span>
+        <span id="repairedBadge" class="hidden bg-yellow-900/50 text-yellow-400 border border-yellow-700 px-2 py-1 rounded">repaired</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let currentStream = null;
+
+// Load domains into dropdown on page load
+async function loadDomains() {
+  try {
+    const res = await fetch(`${API}/domains/list`);
+    const data = await res.json();
+    const sel = document.getElementById('domainOverride');
+    data.domains.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.name;
+      opt.textContent = d.name.charAt(0).toUpperCase() + d.name.slice(1);
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+loadDomains();
+
+// Tab switching for PDDL viewer
+function showTab(tab) {
+  document.getElementById('domainPddl').classList.toggle('hidden', tab !== 'domain');
+  document.getElementById('problemPddl').classList.toggle('hidden', tab !== 'problem');
+  document.getElementById('tabDomain').className = tab === 'domain'
+    ? 'tab-btn px-4 py-3 text-sm font-medium text-brand-400 border-b-2 border-brand-500'
+    : 'tab-btn px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-300 border-b-2 border-transparent';
+  document.getElementById('tabProblem').className = tab === 'problem'
+    ? 'tab-btn px-4 py-3 text-sm font-medium text-brand-400 border-b-2 border-brand-500'
+    : 'tab-btn px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-300 border-b-2 border-transparent';
+}
+
+function setStatus(msg, color='text-gray-300') {
+  const bar = document.getElementById('statusBar');
+  bar.classList.remove('hidden');
+  document.getElementById('statusText').textContent = msg;
+  document.getElementById('statusText').className = `text-sm ${color}`;
+}
+
+function hideStatus() {
+  document.getElementById('statusBar').classList.add('hidden');
+}
+
+function resetOutput() {
+  ['planCard','explanationCard','errorCard','pddlPanel','domainBadge'].forEach(id =>
+    document.getElementById(id).classList.add('hidden')
+  );
+  document.getElementById('planSteps').innerHTML = '';
+  document.getElementById('domainPddl').textContent = '';
+  document.getElementById('problemPddl').textContent = '';
+  document.getElementById('explanationText').textContent = '';
+  document.getElementById('errorText').textContent = '';
+}
+
+async function runPlan() {
+  const task = document.getElementById('taskInput').value.trim();
+  if (!task) return;
+
+  if (currentStream) { currentStream.abort(); }
+  resetOutput();
+  setStatus('Starting...');
+
+  const btn = document.getElementById('solveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Solving...';
+
+  const showPddl = document.getElementById('showPddl').checked;
+  const timeout  = parseInt(document.getElementById('timeout').value);
+  const domain   = document.getElementById('domainOverride').value || null;
+
+  const body = JSON.stringify({ task, timeout, domain_override: domain });
+  const controller = new AbortController();
+  currentStream = controller;
+
+  try {
+    const res = await fetch(`${API}/plan/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: controller.signal,
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop();
+
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        const lines = part.split('\n');
+        let eventType = 'message', dataStr = '';
+        for (const line of lines) {
+          if (line.startsWith('event:')) eventType = line.slice(6).trim();
+          if (line.startsWith('data:')) dataStr = line.slice(5).trim();
+        }
+        if (!dataStr) continue;
+        handleEvent(eventType, JSON.parse(dataStr), showPddl);
+      }
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') {
+      setStatus('Connection error — is the server running?', 'text-red-400');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Solve →';
+  }
+}
+
+function handleEvent(type, data, showPddl) {
+  if (type === 'status') {
+    setStatus(data.message);
+  }
+
+  else if (type === 'pddl') {
+    if (showPddl) {
+      document.getElementById('pddlPanel').classList.remove('hidden');
+      document.getElementById('domainPddl').textContent  = data.domain  || '';
+      document.getElementById('problemPddl').textContent = data.problem || '';
+      const badge = document.getElementById('domainBadge');
+      badge.classList.remove('hidden');
+      document.getElementById('domainBadgeText').textContent =
+        `domain: ${data.domain_name || 'generated'}`;
+      if (data.repaired) {
+        document.getElementById('repairedBadge').classList.remove('hidden');
+      }
+    }
+  }
+
+  else if (type === 'plan') {
+    const card = document.getElementById('planCard');
+    card.classList.remove('hidden');
+    document.getElementById('planMeta').textContent =
+      `${data.cost} step${data.cost!==1?'s':''} · ${data.time_s}s`;
+    const ol = document.getElementById('planSteps');
+    data.steps.forEach((step, i) => {
+      const li = document.createElement('div');
+      li.className = 'flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-2.5 slide-in';
+      li.innerHTML = `
+        <span class="text-brand-500 mono text-sm font-bold w-6 text-right">${i+1}.</span>
+        <span class="mono text-sm text-gray-200">${step}</span>
+      `;
+      ol.appendChild(li);
+    });
+    setStatus(`Plan found — ${data.cost} steps in ${data.time_s}s`, 'text-green-400');
+  }
+
+  else if (type === 'explanation') {
+    if (data.text) {
+      const card = document.getElementById('explanationCard');
+      card.classList.remove('hidden');
+      document.getElementById('explanationText').textContent = data.text;
+    }
+  }
+
+  else if (type === 'done') {
+    hideStatus();
+  }
+
+  else if (type === 'error') {
+    document.getElementById('errorCard').classList.remove('hidden');
+    document.getElementById('errorText').textContent = data.message;
+    setStatus('Failed', 'text-red-400');
+    hideStatus();
+  }
+}
+
+// Allow Enter (without Shift) to submit
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('taskInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runPlan(); }
+  });
+});
+</script>
+{% endblock %}

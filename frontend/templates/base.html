@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}PlanForge{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50:'#f0f9ff', 500:'#0ea5e9', 600:'#0284c7', 700:'#0369a1' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .pddl-block { white-space: pre-wrap; word-break: break-word; }
+    @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .pulse-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
+    @keyframes slide-in { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    .slide-in { animation: slide-in .3s ease-out; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <!-- Nav -->
+  <nav class="border-b border-gray-800 bg-gray-950/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2 font-bold text-lg">
+        <span class="text-brand-500">⬡</span>
+        <span>PlanForge</span>
+      </a>
+      <div class="flex items-center gap-6 text-sm text-gray-400">
+        <a href="/app"        class="hover:text-white transition-colors">Planner</a>
+        <a href="/domains"    class="hover:text-white transition-colors">Domains</a>
+        <a href="/benchmarks" class="hover:text-white transition-colors">Benchmarks</a>
+        <a href="/history"    class="hover:text-white transition-colors">History</a>
+        <a href="/app" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-1.5 rounded-lg transition-colors font-medium">
+          Try Free
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  {% block content %}{% endblock %}
+
+  <footer class="border-t border-gray-800 mt-20 py-8 text-center text-sm text-gray-600">
+    PlanForge — AI Planning Studio &nbsp;·&nbsp; Built with Fast Downward + Llama 3.3
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Plan History — PlanForge{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-6 py-10">
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <h1 class="text-3xl font-bold mb-1">Plan History</h1>
+      <p class="text-gray-400 text-sm">Your recent planning sessions — stored locally in your browser.</p>
+    </div>
+    <a href="/app" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors">
+      New Plan →
+    </a>
+  </div>
+
+  <!-- Loading / empty states -->
+  <div id="loading" class="text-gray-500 text-sm">Loading history...</div>
+  <div id="empty"   class="hidden text-center py-20 text-gray-600">
+    <div class="text-5xl mb-4">📋</div>
+    <p class="text-lg font-medium mb-2">No plans yet</p>
+    <p class="text-sm mb-6">Go solve something!</p>
+    <a href="/app" class="bg-brand-600 hover:bg-brand-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors">
+      Open Planner →
+    </a>
+  </div>
+
+  <!-- Plan list -->
+  <div id="planList" class="hidden space-y-3"></div>
+
+  <!-- Detail drawer -->
+  <div id="drawer" class="hidden fixed inset-0 bg-black/70 backdrop-blur z-50 flex items-end sm:items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+      <div class="flex items-start justify-between px-6 py-4 border-b border-gray-800">
+        <div class="flex-1 mr-4">
+          <h3 id="drawerTask" class="font-semibold text-lg leading-snug"></h3>
+          <div id="drawerMeta" class="text-xs text-gray-500 mt-1 mono"></div>
+        </div>
+        <button onclick="closeDrawer()" class="text-gray-500 hover:text-white text-2xl leading-none flex-shrink-0">&times;</button>
+      </div>
+      <div class="flex-1 overflow-auto p-6 space-y-5">
+        <div id="drawerExplanation" class="hidden">
+          <h4 class="text-xs text-gray-500 uppercase tracking-wider mb-2">Explanation</h4>
+          <p id="drawerExplanationText" class="text-gray-300 text-sm leading-relaxed"></p>
+        </div>
+        <div>
+          <h4 class="text-xs text-gray-500 uppercase tracking-wider mb-2">Plan Steps</h4>
+          <ol id="drawerSteps" class="space-y-2"></ol>
+        </div>
+        <div id="drawerPddlSection">
+          <h4 class="text-xs text-gray-500 uppercase tracking-wider mb-2">PDDL</h4>
+          <div class="bg-gray-950 rounded-xl overflow-hidden">
+            <div class="flex border-b border-gray-800 text-xs">
+              <button onclick="drawerTab('domain')"  id="dTabDomain"  class="px-4 py-2 text-brand-400 border-b-2 border-brand-500">Domain</button>
+              <button onclick="drawerTab('problem')" id="dTabProblem" class="px-4 py-2 text-gray-500 hover:text-gray-300 border-b-2 border-transparent">Problem</button>
+            </div>
+            <div class="p-4">
+              <pre id="drawerDomain"  class="mono text-xs text-green-400 whitespace-pre-wrap break-words max-h-64 overflow-auto"></pre>
+              <pre id="drawerProblem" class="mono text-xs text-blue-400  whitespace-pre-wrap break-words max-h-64 overflow-auto hidden"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="px-6 py-3 border-t border-gray-800 flex justify-end">
+        <a id="drawerRetryLink" href="/app" class="bg-brand-600 hover:bg-brand-700 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+          Try again →
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function getSessionId() {
+  let sid = localStorage.getItem('planforge_session');
+  if (!sid) { sid = crypto.randomUUID(); localStorage.setItem('planforge_session', sid); }
+  return sid;
+}
+
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+async function loadHistory() {
+  const sid = getSessionId();
+  try {
+    const res = await fetch('/api/plans', { headers: { 'X-Session-ID': sid } });
+    const data = await res.json();
+    const plans = data.plans || [];
+
+    document.getElementById('loading').classList.add('hidden');
+
+    if (plans.length === 0) {
+      document.getElementById('empty').classList.remove('hidden');
+      return;
+    }
+
+    const list = document.getElementById('planList');
+    list.classList.remove('hidden');
+
+    plans.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-2xl p-5 cursor-pointer transition-all';
+      card.onclick = () => openDetail(p.id);
+      card.innerHTML = `
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <p class="text-gray-100 font-medium truncate">${escHtml(p.task)}</p>
+            <div class="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500">
+              <span class="bg-gray-800 px-2 py-0.5 rounded mono">${escHtml(p.domain_used)}</span>
+              <span>${p.plan_cost} steps</span>
+              <span>${p.solve_time_s.toFixed(2)}s</span>
+              ${p.repaired ? '<span class="text-yellow-500">repaired</span>' : ''}
+            </div>
+          </div>
+          <div class="flex-shrink-0 text-xs text-gray-600">${fmtDate(p.created_at)}</div>
+        </div>
+      `;
+      list.appendChild(card);
+    });
+  } catch(e) {
+    document.getElementById('loading').textContent = 'Failed to load history.';
+  }
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function openDetail(planId) {
+  const sid = getSessionId();
+  document.getElementById('drawerTask').textContent = 'Loading...';
+  document.getElementById('drawerSteps').innerHTML = '';
+  document.getElementById('drawer').classList.remove('hidden');
+
+  try {
+    const res = await fetch(`/api/plans/${planId}`, { headers: { 'X-Session-ID': sid } });
+    if (!res.ok) throw new Error('not found');
+    const p = await res.json();
+
+    document.getElementById('drawerTask').textContent = p.task;
+    document.getElementById('drawerMeta').textContent =
+      `${p.domain_used} · ${p.plan_cost} steps · ${p.solve_time_s.toFixed(2)}s · ${fmtDate(p.created_at)}`;
+
+    if (p.explanation) {
+      document.getElementById('drawerExplanation').classList.remove('hidden');
+      document.getElementById('drawerExplanationText').textContent = p.explanation;
+    }
+
+    const ol = document.getElementById('drawerSteps');
+    (p.plan_steps || []).forEach((step, i) => {
+      const li = document.createElement('div');
+      li.className = 'flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-2.5';
+      li.innerHTML = `<span class="text-brand-500 mono text-sm font-bold w-6 text-right">${i+1}.</span>
+                      <span class="mono text-sm text-gray-200">${escHtml(step)}</span>`;
+      ol.appendChild(li);
+    });
+
+    document.getElementById('drawerDomain').textContent  = p.domain_pddl  || '';
+    document.getElementById('drawerProblem').textContent = p.problem_pddl || '';
+    document.getElementById('drawerRetryLink').href = `/app?domain=${encodeURIComponent(p.domain_used)}`;
+  } catch(e) {
+    document.getElementById('drawerTask').textContent = 'Failed to load plan details.';
+  }
+}
+
+function closeDrawer() {
+  document.getElementById('drawer').classList.add('hidden');
+}
+
+function drawerTab(tab) {
+  document.getElementById('drawerDomain').classList.toggle('hidden', tab !== 'domain');
+  document.getElementById('drawerProblem').classList.toggle('hidden', tab !== 'problem');
+  document.getElementById('dTabDomain').className = tab === 'domain'
+    ? 'px-4 py-2 text-brand-400 border-b-2 border-brand-500'
+    : 'px-4 py-2 text-gray-500 hover:text-gray-300 border-b-2 border-transparent';
+  document.getElementById('dTabProblem').className = tab === 'problem'
+    ? 'px-4 py-2 text-brand-400 border-b-2 border-brand-500'
+    : 'px-4 py-2 text-gray-500 hover:text-gray-300 border-b-2 border-transparent';
+}
+
+document.getElementById('drawer').addEventListener('click', e => {
+  if (e.target === document.getElementById('drawer')) closeDrawer();
+});
+
+loadHistory();
+</script>
+{% endblock %}

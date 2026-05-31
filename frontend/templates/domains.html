@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Domain Library — PlanForge{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-6 py-10">
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">Domain Library</h1>
+    <p class="text-gray-400">Pre-validated PDDL planning domains. Click any domain to view its PDDL.</p>
+  </div>
+
+  <!-- Loading state -->
+  <div id="loading" class="text-gray-500 text-sm">Loading domains...</div>
+
+  <!-- Domain grid -->
+  <div id="domainGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 hidden"></div>
+
+  <!-- PDDL viewer modal -->
+  <div id="modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+        <div>
+          <h3 id="modalTitle" class="font-semibold text-lg"></h3>
+          <p id="modalDesc" class="text-sm text-gray-400 mt-0.5"></p>
+        </div>
+        <button onclick="closeModal()" class="text-gray-500 hover:text-white text-2xl leading-none">&times;</button>
+      </div>
+      <div class="p-5 overflow-auto flex-1">
+        <pre id="modalPddl" class="mono text-xs text-green-400 pddl-block"></pre>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-800 flex justify-between items-center">
+        <span class="text-xs text-gray-500">Built-in domain</span>
+        <a id="tryLink" href="/app" class="bg-brand-600 hover:bg-brand-700 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+          Try in Planner →
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DESCRIPTIONS = {
+  blocksworld: "Stack and unstack coloured blocks on a table using pick-up, put-down, stack, and unstack actions.",
+  logistics:   "Move packages between cities using trucks on roads and airplanes between airports.",
+  gripper:     "A robot with two grippers moves balls between rooms by picking them up and dropping them.",
+  rover:       "A Mars rover navigates terrain, collects soil and rock samples, and transmits data to a lander.",
+  ferry:       "A ferry transports cars between locations across a body of water.",
+  hanoi:       "The classic Towers of Hanoi puzzle — move disks between pegs respecting size constraints.",
+  depots:      "Forklifts and trucks move crates between depots and distributors.",
+  satellite:   "A satellite points instruments at targets, calibrates them, and takes images.",
+  freecell:    "A simplified Freecell card game — move cards between columns, free cells, and home stacks.",
+  tyreworld:   "Change a flat tyre on a car — jack up, loosen bolts, remove, replace, and inflate.",
+};
+
+async function loadDomains() {
+  try {
+    const res = await fetch('/api/domains/list');
+    const data = await res.json();
+    const grid = document.getElementById('domainGrid');
+    document.getElementById('loading').classList.add('hidden');
+    grid.classList.remove('hidden');
+
+    data.domains.forEach(d => {
+      const card = document.createElement('div');
+      card.className = 'bg-gray-900 border border-gray-800 hover:border-brand-500/50 rounded-2xl p-5 cursor-pointer transition-all hover:bg-gray-800/50';
+      card.onclick = () => openDomain(d.name);
+      card.innerHTML = `
+        <div class="flex items-start justify-between mb-3">
+          <h3 class="font-semibold text-lg capitalize">${d.name}</h3>
+          <span class="text-xs bg-gray-800 text-gray-400 border border-gray-700 px-2 py-0.5 rounded-full">builtin</span>
+        </div>
+        <p class="text-sm text-gray-400 leading-relaxed">${DESCRIPTIONS[d.name] || d.description || ''}</p>
+        <div class="mt-4 text-xs text-brand-500 font-medium">View PDDL →</div>
+      `;
+      grid.appendChild(card);
+    });
+  } catch(e) {
+    document.getElementById('loading').textContent = 'Failed to load domains.';
+  }
+}
+
+async function openDomain(name) {
+  document.getElementById('modalTitle').textContent = name.charAt(0).toUpperCase() + name.slice(1);
+  document.getElementById('modalDesc').textContent = DESCRIPTIONS[name] || '';
+  document.getElementById('modalPddl').textContent = 'Loading...';
+  document.getElementById('tryLink').href = `/app?domain=${name}`;
+  document.getElementById('modal').classList.remove('hidden');
+
+  try {
+    const res = await fetch(`/api/domains/${name}`);
+    const data = await res.json();
+    document.getElementById('modalPddl').textContent = data.pddl;
+  } catch(e) {
+    document.getElementById('modalPddl').textContent = 'Failed to load domain PDDL.';
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+}
+
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) closeModal();
+});
+
+loadDomains();
+</script>
+{% endblock %}

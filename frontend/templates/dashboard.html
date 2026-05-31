@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — PlanForge{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-6 py-10">
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold mb-1">Dashboard</h1>
+    <p class="text-gray-400 text-sm">Your planning activity overview.</p>
+  </div>
+
+  <!-- Stats row -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+      <div id="statTotal" class="text-3xl font-bold text-brand-400 mb-1">—</div>
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Total Plans</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+      <div id="statRate" class="text-3xl font-bold text-green-400 mb-1">—</div>
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Success Rate</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+      <div id="statSteps" class="text-3xl font-bold text-yellow-400 mb-1">—</div>
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Avg Steps</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+      <div id="statDomain" class="text-xl font-bold text-purple-400 mb-1 truncate">—</div>
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Top Domain</div>
+    </div>
+  </div>
+
+  <!-- Recent plans -->
+  <div class="mb-4 flex items-center justify-between">
+    <h2 class="text-xl font-semibold">Recent Plans</h2>
+    <a href="/history" class="text-sm text-brand-400 hover:text-brand-300 transition-colors">View all →</a>
+  </div>
+
+  <div id="loading" class="text-gray-500 text-sm">Loading...</div>
+  <div id="empty"   class="hidden text-gray-600 text-sm py-8 text-center">No plans yet. <a href="/app" class="text-brand-400 hover:underline">Solve something!</a></div>
+  <div id="recentList" class="hidden space-y-3"></div>
+</div>
+
+<script>
+function getSessionId() {
+  let sid = localStorage.getItem('planforge_session');
+  if (!sid) { sid = crypto.randomUUID(); localStorage.setItem('planforge_session', sid); }
+  return sid;
+}
+
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadDashboard() {
+  const sid = getSessionId();
+  const headers = { 'X-Session-ID': sid };
+
+  try {
+    const [statsRes, plansRes] = await Promise.all([
+      fetch('/api/plans/stats', { headers }),
+      fetch('/api/plans', { headers }),
+    ]);
+    const stats  = await statsRes.json();
+    const { plans } = await plansRes.json();
+
+    document.getElementById('statTotal').textContent  = stats.total ?? 0;
+    document.getElementById('statRate').textContent   = stats.success_rate != null ? `${stats.success_rate}%` : '0%';
+    document.getElementById('statSteps').textContent  = stats.avg_steps ?? 0;
+    document.getElementById('statDomain').textContent = stats.favourite_domain ?? '—';
+
+    document.getElementById('loading').classList.add('hidden');
+
+    if (!plans || plans.length === 0) {
+      document.getElementById('empty').classList.remove('hidden');
+      return;
+    }
+
+    const list = document.getElementById('recentList');
+    list.classList.remove('hidden');
+
+    plans.slice(0, 10).forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 flex items-center gap-4';
+      card.innerHTML = `
+        <div class="flex-1 min-w-0">
+          <p class="text-gray-100 text-sm font-medium truncate">${escHtml(p.task)}</p>
+          <div class="flex gap-2 mt-1 text-xs text-gray-500">
+            <span class="mono bg-gray-800 px-2 py-0.5 rounded">${escHtml(p.domain_used)}</span>
+            <span>${p.plan_cost} steps</span>
+            <span>${p.solve_time_s.toFixed(2)}s</span>
+          </div>
+        </div>
+        <span class="flex-shrink-0 text-xs text-gray-600">${fmtDate(p.created_at)}</span>
+      `;
+      list.appendChild(card);
+    });
+
+  } catch(e) {
+    document.getElementById('loading').textContent = 'Failed to load dashboard.';
+  }
+}
+
+loadDashboard();
+</script>
+{% endblock %}
